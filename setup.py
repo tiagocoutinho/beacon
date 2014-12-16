@@ -4,4 +4,4 @@ setup(name="beacon", version="0.1",
       description="BEAmline CONfiguration library",
       author="S. Petitdemange, M. Guijarro (ESRF)",
       package_dir={"beacon": "beacon"},
-      packages=["beacon", "beacon.conductor"]) 
+      packages=["beacon", "beacon.conductor","beacon.plugins"]) 
