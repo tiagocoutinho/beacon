@@ -4,7 +4,9 @@ import argparse
 import weakref
 import subprocess
 import gevent
-from gevent import select,socket
+from gevent import monkey; monkey.patch_all()
+import socket
+import select
 
 def start_database_ds(tango_port = 20000,personal_name='2',debug_level = 0):
     from PyTango.databaseds import database
@@ -41,6 +43,15 @@ else:
             for i in xrange(0,len(msg),max_message_size):
                 self._wqueue.send(msg[i:i+max_message_size])
 
+try:
+    import flask
+except ImportError:
+    print "flask cannot be imported: web application won't be available"
+else:
+    from gevent.wsgi import WSGIServer
+    from werkzeug.debug import DebuggedApplication
+    from .config_app import web_app
+
 _options = None
 _lock_object = {}
 _client_to_object = weakref.WeakKeyDictionary()
@@ -65,13 +76,13 @@ def _lock(client_id,prio,lock_obj,raw_message) :
             break
 
     if all_free:
-        stollen_lock = {}
+        stolen_lock = {}
         for obj in lock_obj:
             socket_id,compteur,lock_prio = _lock_object.get(obj,(client_id,0,prio))
             if socket_id != client_id: # still lock
-                pre_obj = stollen_lock.get(socket_id,None)
+                pre_obj = stolen_lock.get(socket_id,None)
                 if pre_obj is None:
-                    stollen_lock[socket_id] = [obj]
+                    stolen_lock[socket_id] = [obj]
                 else:
                     pre_obj.append(obj)
                 _lock_object[obj] = (client_id,1,prio)
@@ -82,7 +93,7 @@ def _lock(client_id,prio,lock_obj,raw_message) :
                 new_prio = lock_prio > prio and lock_prio or prio
                 _lock_object[obj] = (client_id,compteur,new_prio)
 
-        for client,objects in stollen_lock.iteritems():
+        for client,objects in stolen_lock.iteritems():
             client.sendall(protocol.message(protocol.LOCK_STOLLEN,'|'.join(objects)))
 
         obj_already_locked = _client_to_object.get(client_id,set())
@@ -177,7 +188,7 @@ def _write_config_db_file(client_id,message):
 
     if first_pos < 0 or second_pos < 0: # message malformed
         msg = protocol.message(protocol.CONFIG_SET_DB_FILE_FAILED,
-                               '%s|%s' % (message_key,'Message malformed'))
+                               '%s|%s' % (message_key,'Malformed message'))
         client_id.sendall(msg)
         return   
 
@@ -322,6 +333,8 @@ def main():
                         help="tango server port (default to 0: disable)")
     parser.add_argument("--tango_debug_level",dest="tango_debug_level",type=int,default=0,
                         help="tango debug level (default to 0: WARNING,1:INFO,2:DEBUG)")
+    parser.add_argument("--webapp_port",dest="webapp_port",type=int,default=0,
+                        help="web server port (default to 0: disable)")
     global _options
     _options = parser.parse_args()
     
@@ -347,9 +360,17 @@ def main():
     port = tcp.getsockname()[1]
     tcp.listen(512)        # limit to 512 clients
 
+    #web application
+    if _options.webapp_port > 0:
+        print "Web application sitting on port:",_options.webapp_port
+        web_app.debug = True
+        web_app.beacon_port = _options.port
+        http_server = WSGIServer(('', _options.webapp_port), DebuggedApplication(web_app, evalex=True))
+        gevent.spawn(http_server.serve_forever) 
+
     #Tango databaseds
-    print '[TANGO] Database started on port:',_options.tango_port
     if _options.tango_port > 0:
+        print '[TANGO] Database started on port:',_options.tango_port
         tango_rp,tango_wp = os.pipe()
         child_pid = os.fork()
         if child_pid == 0:

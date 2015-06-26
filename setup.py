@@ -6,5 +6,6 @@ setup(name="beacon", version="0.1",
       package_dir={"beacon": "beacon"},
       packages=["beacon", "beacon.conductor",
                 "beacon.plugins","beacon.redis"],
-      package_data={'beacon.redis':['redis.conf']},
+      package_data={'beacon.redis': ['redis.conf'],
+                    'beacon.conductor': ['*.html', 'css/*.css', "js/*.js"]},
       scripts=["bin/beacon-server"])
