@@ -7,6 +7,8 @@ import gevent
 from gevent import monkey; monkey.patch_all()
 import socket
 import select
+import signal
+import traceback
 
 def start_database_ds(tango_port = 20000,personal_name='2',debug_level = 0):
     from PyTango.databaseds import database
@@ -34,7 +36,7 @@ else:
         def close(self) :
             posix_ipc.MessageQueue.close(self)
             self._wqueue.close()
-            
+
         def names(self):
             return self._wqueue.name,self.name
 
@@ -98,11 +100,11 @@ def _lock(client_id,prio,lock_obj,raw_message) :
 
         obj_already_locked = _client_to_object.get(client_id,set())
         _client_to_object[client_id] = set(lock_obj).union(obj_already_locked)
-        
+
         client_id.sendall(protocol.message(protocol.LOCK_OK_REPLY,raw_message))
     else:
         _waiting_lock[client_id] = lock_obj
-    
+
 #    print '_lock_object',_lock_object
 
 def _unlock(client_id,priority,unlock_obj) :
@@ -177,8 +179,7 @@ def _send_config_db_files(client_id,message):
                         msg = protocol.message(protocol.CONFIG_DB_FILE_RX,'%s|%s|%s' % (message_key,rel_path,raw_buffer))
                         client_id.sendall(msg)
     except:
-        import traceback
-        traceback.print_exc()
+        sys.excepthook(*sys.exc_info())
     finally:
         client_id.sendall(protocol.message(protocol.CONFIG_DB_END,"%s|" % (message_key)))
 
@@ -190,7 +191,7 @@ def _write_config_db_file(client_id,message):
         msg = protocol.message(protocol.CONFIG_SET_DB_FILE_FAILED,
                                '%s|%s' % (message_key,'Malformed message'))
         client_id.sendall(msg)
-        return   
+        return
 
     message_key = message[:first_pos]
     file_path = message[first_pos + 1:second_pos]
@@ -210,7 +211,7 @@ def _write_config_db_file(client_id,message):
 def _send_posix_mq_connection(client_id,client_hostname):
     ok_flag = False
     try:
-        if(posix_ipc is not None and 
+        if(posix_ipc is not None and
            not isinstance(client_id,posix_ipc.MessageQueue)):
             if client_hostname == socket.gethostname(): # same host
                 #open a message queue
@@ -219,8 +220,7 @@ def _send_posix_mq_connection(client_id,client_hostname):
                 mq_name = new_mq.names()
                 ok_flag = True
     except:
-        import traceback
-        traceback.print_exc()
+        sys.excepthook(*sys.exc_info())
     finally:
         if ok_flag:
             client_id.sendall(protocol.message(protocol.POSIX_MQ_OK,'|'.join(mq_name)))
@@ -295,29 +295,29 @@ def _client_rx(client):
                         else:
                             _send_unknow_message(c_id)
                     except ValueError:
-                        import traceback
-                        traceback.print_exc()
+                        sys.excepthook(*sys.exc_info())
                         break
                     except:
-                        import traceback
-                        traceback.print_exc()
+                        sys.excepthook(*sys.exc_info())
                         print 'Error with client id %s, close it' % client
                         raise
-                
+
                 if fd == client:
                     tcp_data = data
                 else:
                     posix_queue_data = data
     except:
-        import traceback
-        traceback.print_exc()
-        pass
+        sys.excepthook(*sys.exc_info())
     finally:
         _clean(client)
         client.close()
         if posix_queue:
             posix_queue.close()
             _clean(posix_queue)
+
+def sigterm_handler(_signo, _stack_frame):
+    # On signal received, close the signal pipe to do a clean exit.
+    os.close(sig_write)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -337,10 +337,14 @@ def main():
                         help="web server port (default to 0: disable)")
     global _options
     _options = parser.parse_args()
-    
+
+    # Binds system signals.
+    signal.signal(signal.SIGTERM, sigterm_handler)
+    signal.signal(signal.SIGINT, sigterm_handler)
+
     # pimp my path
     _options.db_path = os.path.abspath(os.path.expanduser(_options.db_path))
- 
+
     #posix queues
     if not _options.posix_queue:
         global posix_ipc
@@ -390,16 +394,22 @@ def main():
     redis_process = subprocess.Popen(['redis-server',redis_conf.get_redis_config_path(),
                                       '--port','%d' % _options.redis_port],
                                      stdout=wp,stderr=subprocess.STDOUT,cwd=_options.db_path)
-            
+    # signal pipe
+    global sig_write
+    sig_read, sig_write = os.pipe()
+
     try:
-      fd_list = [udp,tcp,rp]
+      fd_list = [udp,tcp,rp,sig_read]
       if tango_rp:
           fd_list.append(tango_rp)
       msg_prefix = {tango_rp:'[TANGO]',
                     rp:'[REDIS]'}
-      while True:
+
+      bosse = True
+
+      while bosse:
         rlist,_,_ = select.select(fd_list,[],[],-1)
-            
+
         for s in rlist:
             if s == udp:
                 buff,address = udp.recvfrom(8192)
@@ -412,6 +422,9 @@ def main():
 
                 gevent.spawn(_client_rx,newSocket)
 
+            elif s == sig_read:
+                bosse = False
+                break
             else:
                 msg = os.read(s,8192)
                 if msg:
@@ -422,10 +435,9 @@ def main():
                     print '%s: Warning Database exit' % (msg_prefix.get(s,'[DEFAULT]'))
                 break
     except KeyboardInterrupt:
-       pass
+        pass
     finally:
-      redis_process.terminate()
+        redis_process.terminate()
 
-    
 if __name__ == "__main__" and __package__ is None:
     main()
