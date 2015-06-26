@@ -4,7 +4,9 @@ import argparse
 import weakref
 import subprocess
 import gevent
-from gevent import select,socket
+from gevent import monkey; monkey.patch_all()
+import socket
+import select
 
 def start_database_ds(tango_port = 20000,personal_name='2',debug_level = 0):
     from PyTango.databaseds import database
