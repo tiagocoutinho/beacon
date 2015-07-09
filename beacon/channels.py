@@ -228,7 +228,7 @@ def call_notification_callbacks(bus_id, channel_name):
     except KeyError:
         return
     else:
-        channel._fire_notification_callbacks()
+        gevent.spawn(channel._fire_notification_callbacks)
 
 
 class _Channel(object):
@@ -332,7 +332,6 @@ def Channel(name, value=NotInitialized(), callback=None, wait=True, timeout=1, r
     else:
         # set value for channel, and notify peers
         chan.value = value
-        #chan._fire_notification_callbacks()
 
     CHANNELS.setdefault(bus_id, weakref.WeakValueDictionary())[name] = chan
     
