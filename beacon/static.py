@@ -82,6 +82,12 @@ class Node(NodeDict):
     def __hash__(self):
         return id(self)
 
+    def __getstate__(self):
+        return dict(self)
+
+    def __setstate__(self, d):
+        self.update(d)
+
     @property
     def filename(self) :
         return self.get_node_filename()[1]
@@ -155,12 +161,13 @@ class Node(NodeDict):
     def _get_save_list(self,l,filename):
         return_list = []
         for v in l:
-            if isinstance(v, Node) :
+            if isinstance(v,Config.Node) :
                 if v.filename != filename: break
                 return_list.append(self._get_save_dict(v,filename))
             else:
                 return_list.append(v)
         return return_list
+
     @staticmethod
     def _pprint(node,cur_indet,indent,cur_depth,depth) :
         cfg = node._config()
@@ -203,7 +210,7 @@ class Config(object):
 
     def __init__(self, base_path, timeout=3):
         self._base_path = base_path
-       
+
         self.reload(timeout=timeout)
 
     def reload(self, base_path=None, timeout=3):
@@ -222,6 +229,8 @@ class Config(object):
                                                timeout = timeout)
 
         for path, file_content in path2file:
+            if not file_content:
+                continue
             base_path, file_name = os.path.split(path)
             fs_node, fs_key = self._get_or_create_path_node(base_path)
 
@@ -236,8 +245,6 @@ class Config(object):
                 is_init_file = not last_path.startswith('@')
 
             if is_init_file:
-                if d is None:
-                    continue
                 if not fs_key:
                     parents = self._root_node
                 else:
@@ -279,9 +286,9 @@ class Config(object):
                     parents = Node(self,fs_node,path)
                     self._parse(d,parents)
                     self._create_index(parents)
-            
+
             children = fs_node.get(fs_key)
-            
+
             if isinstance(children,list):
                 if isinstance(parents,list):
                     children.extend(parents)
@@ -332,7 +339,7 @@ class Config(object):
         node = self._root_node
         sp_path = base_path.split(os.path.sep)
         if sp_path[-1].startswith('@'): sp_path.pop()
-            
+
         for i,p in enumerate(sp_path[:-1]):
             if p.startswith('@'):
                 rel_init_path = os.path.join(*sp_path[:i + 1])
@@ -378,7 +385,7 @@ class Config(object):
         if instance_object is None: # we will create it
             config_node = self.get_config(name)
             if config_node is None:
-                raise RuntimeError("Object '%s' doesn't exist in config" % name)
+                raise RuntimeError("Object '%s` doesn't exist in config" % name)
 
             module_name = config_node.plugin
             if module_name is None:
@@ -390,7 +397,7 @@ class Config(object):
                     cache_func = getattr(m,'create_object_from_cache')
                     instance_object = cache_func(self, name, cache_object)
                     self._name2instance[name] = instance_object
-                
+
             if instance_object is None:
                 func = getattr(m,'create_objects_from_config_node')
                 name2itemsAndname2itemcache = func(self, config_node)
@@ -454,4 +461,3 @@ class Config(object):
     def _clear_instances(self):
         self._name2instance = dict()
         self._name2cache = dict()
-

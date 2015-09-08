@@ -257,7 +257,7 @@ def add_folder():
     folder = flask.request.form['folder']
 
     filename = os.path.join(folder, "__init__.yml")
-    node = static.Config.Node(cfg, filename=filename)
+    node = static.Node(cfg, filename=filename)
     node.save()
     return flask.json.dumps(dict(message="Folder created!", type="success"))
 
@@ -265,7 +265,7 @@ def add_folder():
 def add_file():
     cfg = __get_config()
     filename = flask.request.form['file']
-    node = static.Config.Node(cfg, filename=filename)
+    node = static.Node(cfg, filename=filename)
     node.save()
     return flask.json.dumps(dict(message="File created!", type="success"))
 
@@ -288,7 +288,7 @@ def copy_file():
     if dst_path.endswith(os.path.pathsep):
         dst_path = os.path.join(dst_path, os.path.split(src_path)[1])
 
-    node = static.Config.Node(cfg, filename=dst_path)
+    node = static.Node(cfg, filename=dst_path)
     node.save()
 
     db_files = dict(client.get_config_db_files())
