@@ -161,7 +161,7 @@ class Node(NodeDict):
     def _get_save_list(self,l,filename):
         return_list = []
         for v in l:
-            if isinstance(v,Config.Node) :
+            if isinstance(v,Node) :
                 if v.filename != filename: break
                 return_list.append(self._get_save_dict(v,filename))
             else:
