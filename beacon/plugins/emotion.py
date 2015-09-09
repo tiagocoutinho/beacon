@@ -3,8 +3,6 @@ import os
 import sys
 import pkgutil
 
-from jinja2 import Environment, FileSystemLoader
-
 from emotion.config.beacon_backend import create_objects_from_config_node, create_object_from_cache
 import emotion.controllers
 
@@ -31,6 +29,7 @@ def get_jinja2():
     try:
         return __environment
     except NameError:
+        from jinja2 import Environment, FileSystemLoader
         __environment = Environment(loader=FileSystemLoader(__this_path))
     return __environment
 
